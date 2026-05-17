@@ -336,16 +336,18 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
   }
   var color = input.color.rgb;
   var alpha = input.color.a * gaussian;
-  if (uniforms.viewMode > 0.5) {
+  if (uniforms.viewMode > 7.5) {
+    let fade = clamp(input.hidden, 0.0, 1.0);
+    let warm = vec3<f32>(1.0, 0.48, 0.16);
+    color = mix(input.color.rgb, warm, fade * 0.62);
+    alpha = input.color.a * gaussian * mix(1.08, 0.92, fade);
+  } else if (uniforms.viewMode > 0.5) {
     color = heat(input.metric);
     alpha = max(0.08, input.color.a) * gaussian * 0.92;
-  }
-  if (uniforms.viewMode > 7.5 && input.hidden > 0.0) {
-    color = vec3<f32>(0.07, 0.08, 0.09);
-    alpha = mix(alpha, 0.055 * gaussian, clamp(input.hidden, 0.0, 1.0));
-  } else if (uniforms.viewMode > 0.5 && input.hidden <= 0.0) {
-    color = mix(color, vec3<f32>(0.1, 0.12, 0.14), 0.72);
-    alpha = alpha * 0.34;
+    if (input.hidden <= 0.0) {
+      color = mix(color, vec3<f32>(0.1, 0.12, 0.14), 0.72);
+      alpha = alpha * 0.34;
+    }
   }
   return vec4<f32>(color * alpha, alpha);
 }

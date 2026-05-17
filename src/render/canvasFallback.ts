@@ -38,15 +38,20 @@ export function drawCanvasFallback(
     const r = Math.max(1.2, Math.min(42, (size * fovScale / depth) * height));
     const metric = metricFor(scene, i, mode, thresholds);
     const fade = thresholdSignal(scene, i, mode, thresholds);
-    const color = mode === 'normal' ? rgb(scene.colors[i * 3], scene.colors[i * 3 + 1], scene.colors[i * 3 + 2]) : heat(metric);
-    items.push({ x, y, r, depth, color, alpha: scene.opacities[i] * (mode === 'normal' ? 0.72 : 0.84), fade });
+    const sourceColor: [number, number, number] = [scene.colors[i * 3], scene.colors[i * 3 + 1], scene.colors[i * 3 + 2]];
+    const color = mode === 'normal'
+      ? rgb(...sourceColor)
+      : mode === 'simplificationPreview'
+        ? mixRgb(sourceColor, [1, 0.48, 0.16], fade * 0.62)
+        : heat(metric);
+    items.push({ x, y, r, depth, color, alpha: scene.opacities[i] * (mode === 'normal' ? 0.72 : mode === 'simplificationPreview' ? 1 : 0.84), fade });
   }
 
   items.sort((a, b) => b.depth - a.depth);
   ctx.globalCompositeOperation = 'lighter';
   for (const item of items) {
     const alpha = mode === 'simplificationPreview'
-      ? item.alpha * (1 - item.fade * 0.92)
+      ? item.alpha * (1.08 - item.fade * 0.16)
       : mode !== 'normal' && item.fade <= 0
         ? item.alpha * 0.34
         : item.alpha;
@@ -134,6 +139,15 @@ function cutoffForMode(mode: ViewMode, thresholds: DiagnosticThresholds): number
 
 function rgb(r: number, g: number, b: number): string {
   return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+}
+
+function mixRgb(from: [number, number, number], to: [number, number, number], amount: number): string {
+  const t = clamp01(amount);
+  return rgb(
+    from[0] + (to[0] - from[0]) * t,
+    from[1] + (to[1] - from[1]) * t,
+    from[2] + (to[2] - from[2]) * t,
+  );
 }
 
 function heat(value: number): string {

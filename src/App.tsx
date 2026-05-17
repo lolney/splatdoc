@@ -149,6 +149,9 @@ export default function App() {
         renderer.setScene(scene);
         renderer.setViewMode(ui.viewMode);
         renderer.render(ui.camera);
+        window.requestAnimationFrame(() => {
+          if (!disposed) renderer.render(liveCameraRef.current);
+        });
       })
       .catch((error: unknown) => {
         if (disposed) return;
@@ -193,6 +196,27 @@ export default function App() {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [ui.camera]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !window.ResizeObserver) return;
+    let frame: number | null = null;
+    const renderAtCurrentSize = () => {
+      frame = null;
+      const renderer = rendererRef.current;
+      if (renderer) renderer.render(liveCameraRef.current);
+      else drawCanvasFallback(canvas, scene, liveCameraRef.current, ui.viewMode, thresholds);
+    };
+    const observer = new ResizeObserver(() => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(renderAtCurrentSize);
+    });
+    observer.observe(canvas);
+    return () => {
+      observer.disconnect();
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+  }, [scene, thresholds, ui.viewMode]);
 
   const updateUi = useCallback((patch: Partial<PersistedUi>) => {
     setUi({ ...ui, ...patch });
