@@ -56,6 +56,10 @@ const THRESHOLD_DESCRIPTIONS: Record<keyof DiagnosticThresholds, string> = {
   simplificationAggression: 'Adjusts how strongly the preview fades dead, low-contribution, and outlier splats.',
 };
 
+const FILE_INPUT_DESCRIPTION = 'Load a local .ply or .splat file. Processing stays in your browser; scene data is not uploaded.';
+const CAMERA_DESCRIPTION = 'Interactive splat viewport. Drag to orbit the scene and use the wheel or trackpad scroll to zoom.';
+const STRESS_PATH_DESCRIPTION = 'Jump to a sampled camera angle ranked by combined soup and overdraw risk.';
+
 const DEFAULT_CAMERA: CameraState = {
   target: [0, 0, 0],
   yaw: 0.6,
@@ -254,14 +258,14 @@ export default function App() {
           </div>
         </div>
 
-        <label className="drop-zone" onDrop={(event) => {
+        <label className="drop-zone" {...tooltipProps(FILE_INPUT_DESCRIPTION)} onDrop={(event) => {
           event.preventDefault();
           const file = event.dataTransfer.files[0];
           if (file) void loadFile(file);
         }} onDragOver={(event) => event.preventDefault()}>
           <Upload size={20} />
           <span>Drop .ply or .splat</span>
-          <input aria-label="Load splat file" type="file" accept=".ply,.splat" onChange={(event) => {
+          <input aria-label={`Load splat file: ${FILE_INPUT_DESCRIPTION}`} type="file" accept=".ply,.splat" onChange={(event) => {
             const file = event.target.files?.[0];
             if (file) void loadFile(file);
           }} />
@@ -305,7 +309,7 @@ export default function App() {
           <div className="status" {...tooltipProps('Drag the viewport to orbit the current camera. Use the mouse wheel or trackpad scroll to zoom toward or away from the scene.')}><MousePointer2 size={15} /> drag orbit · wheel zoom</div>
         </div>
         <div className="canvas-stage">
-          <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onWheel={onWheel} />
+          <canvas aria-label={CAMERA_DESCRIPTION} role="img" ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onWheel={onWheel} />
           {webGpuError && <div className="gpu-fallback"><AlertTriangle size={14} />CPU preview · {webGpuError}</div>}
         </div>
         <p className="load-status">{status}</p>
@@ -339,7 +343,12 @@ export default function App() {
         <section className="panel stress">
           <h2><Camera size={17} /> Stress Path</h2>
           {stress.slice(0, 4).map((sample) => (
-            <button key={sample.label} {...tooltipProps('Jump to a sampled camera angle ranked by combined soup and overdraw risk.')} onClick={() => updateUi({ camera: sample.camera })}>
+            <button
+              key={sample.label}
+              aria-label={`${sample.label} stress camera, ${Math.round((sample.soupRisk + sample.overdrawScore) * 50)} risk: ${STRESS_PATH_DESCRIPTION}`}
+              {...tooltipProps(STRESS_PATH_DESCRIPTION)}
+              onClick={() => updateUi({ camera: sample.camera })}
+            >
               <span>{sample.label}</span>
               <b>{Math.round((sample.soupRisk + sample.overdrawScore) * 50)} risk</b>
             </button>
