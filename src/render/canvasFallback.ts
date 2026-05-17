@@ -21,7 +21,7 @@ export function drawCanvasFallback(
 
   const { eye, forward, right, up } = viewBasis(camera);
   const fovScale = 1 / Math.tan((camera.fov * Math.PI / 180) / 2);
-  const items: Array<{ x: number; y: number; r: number; depth: number; color: string; alpha: number; hidden: boolean }> = [];
+  const items: Array<{ x: number; y: number; r: number; depth: number; color: string; alpha: number; fade: number }> = [];
   const step = Math.max(1, Math.floor(scene.count / 9000));
 
   for (let i = 0; i < scene.count; i += step) {
@@ -37,15 +37,15 @@ export function drawCanvasFallback(
     const size = Math.max(scene.scales[i * 3], scene.scales[i * 3 + 1], scene.scales[i * 3 + 2]);
     const r = Math.max(1.2, Math.min(42, (size * fovScale / depth) * height));
     const metric = metricFor(scene, i, mode, thresholds);
-    const hidden = shouldHide(scene, i, thresholds);
+    const fade = simplificationFade(scene, i, thresholds);
     const color = mode === 'normal' ? rgb(scene.colors[i * 3], scene.colors[i * 3 + 1], scene.colors[i * 3 + 2]) : heat(metric);
-    items.push({ x, y, r, depth, color, alpha: scene.opacities[i] * (mode === 'normal' ? 0.72 : 0.84), hidden });
+    items.push({ x, y, r, depth, color, alpha: scene.opacities[i] * (mode === 'normal' ? 0.72 : 0.84), fade });
   }
 
   items.sort((a, b) => b.depth - a.depth);
   ctx.globalCompositeOperation = 'lighter';
   for (const item of items) {
-    ctx.globalAlpha = mode === 'simplificationPreview' && item.hidden ? 0.06 : item.alpha;
+    ctx.globalAlpha = mode === 'simplificationPreview' ? item.alpha * (1 - item.fade * 0.92) : item.alpha;
     const gradient = ctx.createRadialGradient(item.x, item.y, 0, item.x, item.y, item.r);
     gradient.addColorStop(0, item.color);
     gradient.addColorStop(1, 'rgba(0,0,0,0)');
@@ -86,14 +86,21 @@ function metricFor(scene: SplatScene, i: number, mode: ViewMode, thresholds: Dia
   if (mode === 'blurRisk') return scene.metrics.blurRisk[i];
   if (mode === 'projectedSize') return clamp01(size / Math.max(scene.metrics.averageScale * 4, 0.0001));
   if (mode === 'overdraw') return clamp01(scene.opacities[i] * scene.metrics.density[i] + size / Math.max(scene.bounds.radius * 0.08, 0.0001));
-  if (mode === 'simplificationPreview') return shouldHide(scene, i, thresholds) ? 0 : 1;
+  if (mode === 'simplificationPreview') return simplificationScore(scene, i, thresholds);
   return 0;
 }
 
-function shouldHide(scene: SplatScene, i: number, thresholds: DiagnosticThresholds): boolean {
-  return scene.opacities[i] < thresholds.opacityFloor
-    || scene.metrics.deadScore[i] > 0.58 - thresholds.simplificationAggression * 0.22
-    || scene.metrics.outlierScore[i] > thresholds.outlierPercentile;
+function simplificationScore(scene: SplatScene, i: number, thresholds: DiagnosticThresholds): number {
+  const opacityRisk = thresholds.opacityFloor <= 0
+    ? 0
+    : clamp01((thresholds.opacityFloor - scene.opacities[i]) / Math.max(thresholds.opacityFloor, 0.001));
+  const outlierRisk = clamp01((scene.metrics.outlierScore[i] - thresholds.outlierPercentile) / Math.max(1 - thresholds.outlierPercentile, 0.001));
+  return clamp01(Math.max(opacityRisk, scene.metrics.deadScore[i] * 0.95, outlierRisk));
+}
+
+function simplificationFade(scene: SplatScene, i: number, thresholds: DiagnosticThresholds): number {
+  const risk = simplificationScore(scene, i, thresholds);
+  return clamp01(risk * (0.35 + thresholds.simplificationAggression * 1.2) + thresholds.simplificationAggression * 0.45 - 0.25);
 }
 
 function rgb(r: number, g: number, b: number): string {

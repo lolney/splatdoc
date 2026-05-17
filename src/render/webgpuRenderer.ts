@@ -188,7 +188,7 @@ export class WebGpuSplatRenderer {
       data[base + 8] = metric;
       data[base + 9] = 0;
       data[base + 10] = scene.sourceIndices[i];
-      data[base + 11] = shouldHideForSimplification(scene, i, this.thresholds) ? 1 : 0;
+      data[base + 11] = simplificationFade(scene, i, this.thresholds);
     }
     return data;
   }
@@ -207,15 +207,21 @@ function metricForMode(scene: SplatScene, i: number, mode: ViewMode, thresholds:
   if (mode === 'blurRisk') return scene.metrics.blurRisk[i];
   if (mode === 'projectedSize') return clamp01(scale / Math.max(scene.metrics.averageScale * 4, 0.0001));
   if (mode === 'overdraw') return clamp01(scene.opacities[i] * scene.metrics.density[i] + scale / Math.max(scene.bounds.radius * 0.08, 0.0001));
-  if (mode === 'simplificationPreview') return shouldHideForSimplification(scene, i, thresholds) ? 0 : 1;
+  if (mode === 'simplificationPreview') return simplificationScore(scene, i, thresholds);
   return 0;
 }
 
-function shouldHideForSimplification(scene: SplatScene, i: number, thresholds: DiagnosticThresholds): boolean {
-  const pressure = thresholds.simplificationAggression;
-  return scene.opacities[i] < thresholds.opacityFloor
-    || scene.metrics.deadScore[i] > 0.58 - pressure * 0.22
-    || scene.metrics.outlierScore[i] > thresholds.outlierPercentile;
+function simplificationScore(scene: SplatScene, i: number, thresholds: DiagnosticThresholds): number {
+  const opacityRisk = thresholds.opacityFloor <= 0
+    ? 0
+    : clamp01((thresholds.opacityFloor - scene.opacities[i]) / Math.max(thresholds.opacityFloor, 0.001));
+  const outlierRisk = clamp01((scene.metrics.outlierScore[i] - thresholds.outlierPercentile) / Math.max(1 - thresholds.outlierPercentile, 0.001));
+  return clamp01(Math.max(opacityRisk, scene.metrics.deadScore[i] * 0.95, outlierRisk));
+}
+
+function simplificationFade(scene: SplatScene, i: number, thresholds: DiagnosticThresholds): number {
+  const risk = simplificationScore(scene, i, thresholds);
+  return clamp01(risk * (0.35 + thresholds.simplificationAggression * 1.2) + thresholds.simplificationAggression * 0.45 - 0.25);
 }
 
 const shader = /* wgsl */ `
@@ -307,9 +313,9 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
     color = heat(input.metric);
     alpha = max(0.08, input.color.a) * gaussian * 0.92;
   }
-  if (uniforms.viewMode > 7.5 && input.hidden > 0.5) {
+  if (uniforms.viewMode > 7.5 && input.hidden > 0.0) {
     color = vec3<f32>(0.07, 0.08, 0.09);
-    alpha = 0.09 * gaussian;
+    alpha = mix(alpha, 0.055 * gaussian, clamp(input.hidden, 0.0, 1.0));
   }
   return vec4<f32>(color * alpha, alpha);
 }

@@ -11,9 +11,18 @@ test('loads the diagnostic cockpit and switches modes', async ({ page }) => {
 
 test('explains diagnostic controls with tooltips', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('button', { name: /Opacity view/ })).toHaveAttribute('data-tooltip', /Maps each splat by alpha contribution/);
+  await page.getByRole('button', { name: /Opacity view/ }).hover();
+  await expect(page.getByRole('tooltip')).toContainText(/Maps each splat by alpha contribution/);
 
-  await expect(page.getByLabel(/Opacity floor/)).toHaveAttribute('aria-label', /Splats below this alpha/);
+  await page.getByLabel(/Opacity floor/).hover();
+  await expect(page.getByRole('tooltip')).toContainText(/Splats below this alpha/);
+});
+
+test('threshold sliders enter simplification preview', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: /Normal view/ })).toHaveClass(/active/);
+  await page.getByRole('slider', { name: /Simplify/ }).fill('0.9');
+  await expect(page.getByRole('button', { name: /Simplify view/ })).toHaveClass(/active/);
 });
 
 test('shows graceful unsupported file status', async ({ page }) => {

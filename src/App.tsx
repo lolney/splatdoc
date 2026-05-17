@@ -14,7 +14,7 @@ import {
   Sparkles,
   Upload,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type HTMLAttributes, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { makeDemoScene } from './domain/demoScene';
 import { estimateView, runStressTest } from './domain/metrics';
 import { DEFAULT_THRESHOLDS, VIEW_LABELS, type CameraState, type DiagnosticThresholds, type SplatScene, type ViewMode } from './domain/types';
@@ -70,6 +70,13 @@ interface PersistedUi {
   camera: CameraState;
 }
 
+interface TooltipState {
+  text: string;
+  x: number;
+  y: number;
+  side: 'top' | 'bottom';
+}
+
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<WebGpuSplatRenderer | null>(null);
@@ -85,6 +92,7 @@ export default function App() {
   const [scene, setScene] = useState<SplatScene>(() => makeDemoScene());
   const [status, setStatus] = useState('Generated demo scene loaded. Drop a .ply or .splat to inspect your own.');
   const [webGpuError, setWebGpuError] = useState<string | null>(null);
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const estimate = useMemo(() => estimateView(scene, ui.camera, ui.thresholds), [scene, ui.camera, ui.thresholds]);
   const stressCamera = useMemo<CameraState>(() => ({
     target: scene.bounds.center,
@@ -155,6 +163,31 @@ export default function App() {
   const updateUi = useCallback((patch: Partial<PersistedUi>) => {
     setUi({ ...ui, ...patch });
   }, [setUi, ui]);
+
+  const updateThresholds = useCallback((thresholds: DiagnosticThresholds) => {
+    setUi({ ...ui, thresholds, viewMode: 'simplificationPreview' });
+  }, [setUi, ui]);
+
+  const showTooltip = useCallback((text: string, element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    const width = Math.min(300, window.innerWidth - 24);
+    const x = Math.min(window.innerWidth - width / 2 - 12, Math.max(width / 2 + 12, rect.left + rect.width / 2));
+    const showBelow = rect.top < 96;
+    setTooltip({
+      text,
+      x,
+      y: showBelow ? rect.bottom + 12 : rect.top - 12,
+      side: showBelow ? 'bottom' : 'top',
+    });
+  }, []);
+
+  const tooltipProps = useCallback((text: string): HTMLAttributes<HTMLElement> & { 'data-tooltip': string } => ({
+    'data-tooltip': text,
+    onBlur: () => setTooltip(null),
+    onFocus: (event: React.FocusEvent<HTMLElement>) => showTooltip(text, event.currentTarget),
+    onMouseEnter: (event: React.MouseEvent<HTMLElement>) => showTooltip(text, event.currentTarget),
+    onMouseLeave: () => setTooltip(null),
+  }), [showTooltip]);
 
   const renderPreviewCamera = useCallback((camera: CameraState) => {
     pendingCameraRef.current = camera;
@@ -244,7 +277,7 @@ export default function App() {
                   key={mode}
                   className={mode === ui.viewMode ? 'mode active' : 'mode'}
                   aria-label={`${VIEW_LABELS[mode]} view: ${VIEW_DESCRIPTIONS[mode]}`}
-                  data-tooltip={VIEW_DESCRIPTIONS[mode]}
+                  {...tooltipProps(VIEW_DESCRIPTIONS[mode])}
                   onClick={() => updateUi({ viewMode: mode })}
                 >
                   <Icon size={17} />
@@ -257,9 +290,9 @@ export default function App() {
 
         <section className="panel">
           <h2>Thresholds</h2>
-          <Slider label="Opacity floor" description={THRESHOLD_DESCRIPTIONS.opacityFloor} value={ui.thresholds.opacityFloor} min={0} max={0.5} step={0.01} onChange={(value) => updateUi({ thresholds: { ...ui.thresholds, opacityFloor: value } })} />
-          <Slider label="Outlier cutoff" description={THRESHOLD_DESCRIPTIONS.outlierPercentile} value={ui.thresholds.outlierPercentile} min={0.75} max={1} step={0.01} onChange={(value) => updateUi({ thresholds: { ...ui.thresholds, outlierPercentile: value } })} />
-          <Slider label="Simplify" description={THRESHOLD_DESCRIPTIONS.simplificationAggression} value={ui.thresholds.simplificationAggression} min={0} max={1} step={0.01} onChange={(value) => updateUi({ thresholds: { ...ui.thresholds, simplificationAggression: value } })} />
+          <Slider label="Opacity floor" description={THRESHOLD_DESCRIPTIONS.opacityFloor} tooltipProps={tooltipProps(THRESHOLD_DESCRIPTIONS.opacityFloor)} value={ui.thresholds.opacityFloor} min={0} max={0.5} step={0.01} onChange={(value) => updateThresholds({ ...ui.thresholds, opacityFloor: value })} />
+          <Slider label="Outlier cutoff" description={THRESHOLD_DESCRIPTIONS.outlierPercentile} tooltipProps={tooltipProps(THRESHOLD_DESCRIPTIONS.outlierPercentile)} value={ui.thresholds.outlierPercentile} min={0.75} max={1} step={0.01} onChange={(value) => updateThresholds({ ...ui.thresholds, outlierPercentile: value })} />
+          <Slider label="Simplify" description={THRESHOLD_DESCRIPTIONS.simplificationAggression} tooltipProps={tooltipProps(THRESHOLD_DESCRIPTIONS.simplificationAggression)} value={ui.thresholds.simplificationAggression} min={0} max={1} step={0.01} onChange={(value) => updateThresholds({ ...ui.thresholds, simplificationAggression: value })} />
         </section>
       </aside>
 
@@ -269,7 +302,7 @@ export default function App() {
             <strong>{scene.name}</strong>
             <span>{scene.count.toLocaleString()} splats</span>
           </div>
-          <div className="status" data-tooltip="Drag the viewport to orbit the current camera. Use the mouse wheel or trackpad scroll to zoom toward or away from the scene."><MousePointer2 size={15} /> drag orbit · wheel zoom</div>
+          <div className="status" {...tooltipProps('Drag the viewport to orbit the current camera. Use the mouse wheel or trackpad scroll to zoom toward or away from the scene.')}><MousePointer2 size={15} /> drag orbit · wheel zoom</div>
         </div>
         <div className="canvas-stage">
           <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onWheel={onWheel} />
@@ -281,10 +314,10 @@ export default function App() {
       <aside className="right-rail">
         <section className="panel hero-metric">
           <h2><Gauge size={17} /> View Estimate</h2>
-          <div className="metric-row" data-tooltip="Rough CPU/GPU cost estimate for this viewpoint based on splat count, projected size, and overdraw."><span>Frame cost</span><strong>{estimate.estimatedMs.toFixed(1)} ms</strong></div>
-          <div className="metric-row" data-tooltip="Approximate chance that this angle will look cloudy or smeared because of large, dense, or suspicious splats."><span>Soup risk</span><strong>{Math.round(estimate.soupRisk * 100)}%</strong></div>
-          <div className="metric-row" data-tooltip="Estimated repeated blending work for the current camera. Higher overdraw means more translucent splats pile onto the same pixels."><span>Overdraw</span><strong>{Math.round(estimate.overdrawScore * 100)}%</strong></div>
-          <div className="metric-row" data-tooltip="Number of splats currently caught by opacity, outlier, or dead-splat thresholds."><span>Flagged</span><strong>{estimate.flaggedSplats.toLocaleString()}</strong></div>
+          <div className="metric-row" {...tooltipProps('Rough CPU/GPU cost estimate for this viewpoint based on splat count, projected size, and overdraw.')}><span>Frame cost</span><strong>{estimate.estimatedMs.toFixed(1)} ms</strong></div>
+          <div className="metric-row" {...tooltipProps('Approximate chance that this angle will look cloudy or smeared because of large, dense, or suspicious splats.')}><span>Soup risk</span><strong>{Math.round(estimate.soupRisk * 100)}%</strong></div>
+          <div className="metric-row" {...tooltipProps('Estimated repeated blending work for the current camera. Higher overdraw means more translucent splats pile onto the same pixels.')}><span>Overdraw</span><strong>{Math.round(estimate.overdrawScore * 100)}%</strong></div>
+          <div className="metric-row" {...tooltipProps('Number of splats currently caught by opacity, outlier, or dead-splat thresholds.')}><span>Flagged</span><strong>{estimate.flaggedSplats.toLocaleString()}</strong></div>
         </section>
 
         <section className="panel">
@@ -298,31 +331,63 @@ export default function App() {
             estimate.soupRisk,
           ]} />
           <div className="mini-grid">
-            <span data-tooltip="Median projected splat radius in pixels from the current camera."><span>P50 size</span> <b>{estimate.projectedSizeP50.toFixed(1)}px</b></span>
-            <span data-tooltip="95th percentile projected splat radius in pixels. Big values point to blur and soup risk."><span>P95 size</span> <b>{estimate.projectedSizeP95.toFixed(1)}px</b></span>
+            <span {...tooltipProps('Median projected splat radius in pixels from the current camera.')}><span>P50 size</span> <b>{estimate.projectedSizeP50.toFixed(1)}px</b></span>
+            <span {...tooltipProps('95th percentile projected splat radius in pixels. Big values point to blur and soup risk.')}><span>P95 size</span> <b>{estimate.projectedSizeP95.toFixed(1)}px</b></span>
           </div>
         </section>
 
         <section className="panel stress">
           <h2><Camera size={17} /> Stress Path</h2>
           {stress.slice(0, 4).map((sample) => (
-            <button key={sample.label} data-tooltip="Jump to a sampled camera angle ranked by combined soup and overdraw risk." onClick={() => updateUi({ camera: sample.camera })}>
+            <button key={sample.label} {...tooltipProps('Jump to a sampled camera angle ranked by combined soup and overdraw risk.')} onClick={() => updateUi({ camera: sample.camera })}>
               <span>{sample.label}</span>
               <b>{Math.round((sample.soupRisk + sample.overdrawScore) * 50)} risk</b>
             </button>
           ))}
         </section>
       </aside>
+      <TooltipOverlay tooltip={tooltip} />
     </main>
   );
 }
 
-function Slider({ label, description, value, min, max, step, onChange }: { label: string; description: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void }) {
+function Slider({
+  label,
+  description,
+  tooltipProps,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  tooltipProps: HTMLAttributes<HTMLElement> & { 'data-tooltip': string };
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+}) {
   return (
-    <label className="slider" data-tooltip={description}>
+    <label className="slider" {...tooltipProps}>
       <span>{label}<b>{value.toFixed(2)}</b></span>
       <input type="range" aria-label={`${label}: ${description}`} min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
     </label>
+  );
+}
+
+function TooltipOverlay({ tooltip }: { tooltip: TooltipState | null }) {
+  if (!tooltip) return null;
+  const style = {
+    '--tooltip-x': `${tooltip.x}px`,
+    '--tooltip-y': `${tooltip.y}px`,
+  } as CSSProperties;
+  return (
+    <div className={`tooltip-layer ${tooltip.side}`} style={style} role="tooltip">
+      {tooltip.text}
+    </div>
   );
 }
 
