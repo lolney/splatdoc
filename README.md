@@ -2,7 +2,7 @@
 
 Toy-sized, static WebGPU diagnostic viewer for Gaussian splats.
 
-Live site: https://lolney.github.io/splatdoc/
+Live site: https://lukeolney.me/splatdoc/
 
 ## Features
 
