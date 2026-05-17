@@ -58,7 +58,6 @@ export class WebGpuSplatRenderer {
     if (
       this.thresholds.opacityFloor === thresholds.opacityFloor
       && this.thresholds.outlierPercentile === thresholds.outlierPercentile
-      && this.thresholds.simplificationAggression === thresholds.simplificationAggression
     ) {
       return;
     }
@@ -149,7 +148,7 @@ export class WebGpuSplatRenderer {
 
   private uploadScene(camera: CameraState): void {
     if (!this.device || !this.pipeline || !this.uniformBuffer || !this.scene) return;
-    const sortKey = `${this.scene.name}:${this.scene.count}:${this.viewMode}:${this.thresholds.opacityFloor}:${this.thresholds.outlierPercentile}:${this.thresholds.simplificationAggression}`;
+    const sortKey = `${this.scene.name}:${this.scene.count}:${this.viewMode}:${this.thresholds.opacityFloor}:${this.thresholds.outlierPercentile}`;
     if (this.sortedData && sortKey === this.lastSortKey) return;
     const data = this.buildDisplayData();
     this.splatBuffer?.destroy();
@@ -224,7 +223,7 @@ function simplificationScore(scene: SplatScene, i: number, thresholds: Diagnosti
 
 function simplificationFade(scene: SplatScene, i: number, thresholds: DiagnosticThresholds): number {
   const risk = simplificationScore(scene, i, thresholds);
-  return clamp01(risk * (0.18 + thresholds.simplificationAggression * 0.72) + thresholds.simplificationAggression * 0.25);
+  return risk <= 0 ? 0 : clamp01(0.22 + risk * 0.68);
 }
 
 const shader = /* wgsl */ `

@@ -51,7 +51,6 @@ export interface CameraState {
 export interface DiagnosticThresholds {
   opacityFloor: number;
   outlierPercentile: number;
-  simplificationAggression: number;
 }
 
 export interface ViewEstimate {
@@ -85,5 +84,4 @@ export const VIEW_LABELS: Record<ViewMode, string> = {
 export const DEFAULT_THRESHOLDS: DiagnosticThresholds = {
   opacityFloor: 0.08,
   outlierPercentile: 0.96,
-  simplificationAggression: 0.35,
 };

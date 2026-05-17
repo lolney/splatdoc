@@ -14,15 +14,16 @@ test('explains diagnostic controls with tooltips', async ({ page }) => {
   await page.getByRole('button', { name: /Opacity view/ }).hover();
   await expect(page.getByRole('tooltip')).toContainText(/Maps each splat by alpha contribution/);
 
-  await page.getByLabel(/Opacity floor/).hover();
+  await page.getByRole('slider', { name: /Opacity floor/ }).hover();
   await expect(page.getByRole('tooltip')).toContainText(/Splats below this alpha/);
 });
 
-test('threshold sliders enter simplification preview', async ({ page }) => {
+test('threshold sliders drive simplification preview', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('button', { name: /Normal view/ })).toHaveClass(/active/);
-  await page.getByRole('slider', { name: /Simplify/ }).fill('0.9');
+  await page.getByRole('slider', { name: /Opacity floor/ }).fill('0.5');
   await expect(page.getByRole('button', { name: /Simplify view/ })).toHaveClass(/active/);
+  await expect(page.locator('.metric-row').filter({ hasText: 'Flagged' })).toContainText('3,534');
 });
 
 test('shows graceful unsupported file status', async ({ page }) => {

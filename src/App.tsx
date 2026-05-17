@@ -47,13 +47,12 @@ const VIEW_DESCRIPTIONS: Record<ViewMode, string> = {
   outliers: 'Flags spatial floaters far from the scene mass. These are candidates for cleanup or simplification masks.',
   dead: 'Finds low-opacity, low-density splats that contribute little to the image. These are early simplification candidates.',
   blurRisk: 'Combines size, opacity, and outlier signals to answer why this angle looks like soup.',
-  simplificationPreview: 'Previews which splats would be faded by the current thresholds. This is reversible and does not export changes.',
+  simplificationPreview: 'Previews which splats would be faded by Opacity floor and Outlier cutoff. This is reversible and does not export changes.',
 };
 
 const THRESHOLD_DESCRIPTIONS: Record<keyof DiagnosticThresholds, string> = {
   opacityFloor: 'Splats below this alpha are treated as low contribution and become candidates for dead-splat and simplification views.',
   outlierPercentile: 'Controls how aggressively far-away splats are flagged as floaters. Lower values mark more of the outer halo and loose points.',
-  simplificationAggression: 'Adjusts how strongly the preview fades dead, low-contribution, and outlier splats.',
 };
 
 const FILE_INPUT_DESCRIPTION = 'Load a local .ply or .splat file. Processing stays in your browser; scene data is not uploaded.';
@@ -296,7 +295,6 @@ export default function App() {
           <h2>Thresholds</h2>
           <Slider label="Opacity floor" description={THRESHOLD_DESCRIPTIONS.opacityFloor} tooltipProps={tooltipProps(THRESHOLD_DESCRIPTIONS.opacityFloor)} value={ui.thresholds.opacityFloor} min={0} max={0.5} step={0.01} onChange={(value) => updateThresholds({ ...ui.thresholds, opacityFloor: value })} />
           <Slider label="Outlier cutoff" description={THRESHOLD_DESCRIPTIONS.outlierPercentile} tooltipProps={tooltipProps(THRESHOLD_DESCRIPTIONS.outlierPercentile)} value={ui.thresholds.outlierPercentile} min={0.5} max={1} step={0.01} onChange={(value) => updateThresholds({ ...ui.thresholds, outlierPercentile: value })} />
-          <Slider label="Simplify" description={THRESHOLD_DESCRIPTIONS.simplificationAggression} tooltipProps={tooltipProps(THRESHOLD_DESCRIPTIONS.simplificationAggression)} value={ui.thresholds.simplificationAggression} min={0} max={1} step={0.01} onChange={(value) => updateThresholds({ ...ui.thresholds, simplificationAggression: value })} />
         </section>
       </aside>
 
