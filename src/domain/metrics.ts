@@ -58,12 +58,14 @@ export function computeSceneMetrics(
     blurRisk[i] = clamp01((s / Math.max(radius, 0.0001)) * 18 + opacities[i] * 0.2);
   }
 
-  distances.sort();
-  const p85 = distances[Math.min(count - 1, Math.max(0, Math.floor((count - 1) * 0.85)))] || 1;
+  const sortedDistances = new Float32Array(distances);
+  sortedDistances.sort();
+  const p70 = sortedDistances[Math.min(count - 1, Math.max(0, Math.floor((count - 1) * 0.7)))] || 0;
+  const p98 = sortedDistances[Math.min(count - 1, Math.max(0, Math.floor((count - 1) * 0.98)))] || 1;
   for (let i = 0; i < count; i++) {
     const local = densityFor(densityGrid, positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
     density[i] = local;
-    outlierScore[i] = clamp01((distances[i] - p85) / Math.max(0.001, 1.4 - p85));
+    outlierScore[i] = clamp01((distances[i] - p70) / Math.max(0.001, p98 - p70));
     deadScore[i] = clamp01((1 - opacities[i] * 6) * 0.72 + (1 - density[i] * 0.8) * 0.28);
   }
 

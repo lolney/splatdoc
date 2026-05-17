@@ -52,7 +52,7 @@ const VIEW_DESCRIPTIONS: Record<ViewMode, string> = {
 
 const THRESHOLD_DESCRIPTIONS: Record<keyof DiagnosticThresholds, string> = {
   opacityFloor: 'Splats below this alpha are treated as low contribution and become candidates for dead-splat and simplification views.',
-  outlierPercentile: 'Controls how aggressively far-away splats are flagged as floaters. Lower values mark more splats as outliers.',
+  outlierPercentile: 'Controls how aggressively far-away splats are flagged as floaters. Lower values mark more of the outer halo and loose points.',
   simplificationAggression: 'Adjusts how strongly the preview fades dead, low-contribution, and outlier splats.',
 };
 
@@ -295,7 +295,7 @@ export default function App() {
         <section className="panel">
           <h2>Thresholds</h2>
           <Slider label="Opacity floor" description={THRESHOLD_DESCRIPTIONS.opacityFloor} tooltipProps={tooltipProps(THRESHOLD_DESCRIPTIONS.opacityFloor)} value={ui.thresholds.opacityFloor} min={0} max={0.5} step={0.01} onChange={(value) => updateThresholds({ ...ui.thresholds, opacityFloor: value })} />
-          <Slider label="Outlier cutoff" description={THRESHOLD_DESCRIPTIONS.outlierPercentile} tooltipProps={tooltipProps(THRESHOLD_DESCRIPTIONS.outlierPercentile)} value={ui.thresholds.outlierPercentile} min={0.75} max={1} step={0.01} onChange={(value) => updateThresholds({ ...ui.thresholds, outlierPercentile: value })} />
+          <Slider label="Outlier cutoff" description={THRESHOLD_DESCRIPTIONS.outlierPercentile} tooltipProps={tooltipProps(THRESHOLD_DESCRIPTIONS.outlierPercentile)} value={ui.thresholds.outlierPercentile} min={0.5} max={1} step={0.01} onChange={(value) => updateThresholds({ ...ui.thresholds, outlierPercentile: value })} />
           <Slider label="Simplify" description={THRESHOLD_DESCRIPTIONS.simplificationAggression} tooltipProps={tooltipProps(THRESHOLD_DESCRIPTIONS.simplificationAggression)} value={ui.thresholds.simplificationAggression} min={0} max={1} step={0.01} onChange={(value) => updateThresholds({ ...ui.thresholds, simplificationAggression: value })} />
         </section>
       </aside>

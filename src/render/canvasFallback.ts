@@ -94,13 +94,16 @@ function simplificationScore(scene: SplatScene, i: number, thresholds: Diagnosti
   const opacityRisk = thresholds.opacityFloor <= 0
     ? 0
     : clamp01((thresholds.opacityFloor - scene.opacities[i]) / Math.max(thresholds.opacityFloor, 0.001));
-  const outlierRisk = clamp01((scene.metrics.outlierScore[i] - thresholds.outlierPercentile) / Math.max(1 - thresholds.outlierPercentile, 0.001));
-  return clamp01(Math.max(opacityRisk, scene.metrics.deadScore[i] * 0.95, outlierRisk));
+  const rawOutlierRisk = clamp01((scene.metrics.outlierScore[i] - thresholds.outlierPercentile) / Math.max(1 - thresholds.outlierPercentile, 0.001));
+  const outlierRisk = scene.metrics.outlierScore[i] > thresholds.outlierPercentile
+    ? clamp01(0.18 + rawOutlierRisk * 0.82)
+    : 0;
+  return clamp01(Math.max(opacityRisk, scene.metrics.deadScore[i] * 0.72, outlierRisk));
 }
 
 function simplificationFade(scene: SplatScene, i: number, thresholds: DiagnosticThresholds): number {
   const risk = simplificationScore(scene, i, thresholds);
-  return clamp01(risk * (0.35 + thresholds.simplificationAggression * 1.2) + thresholds.simplificationAggression * 0.45 - 0.25);
+  return clamp01(risk * (0.18 + thresholds.simplificationAggression * 0.72) + thresholds.simplificationAggression * 0.25);
 }
 
 function rgb(r: number, g: number, b: number): string {
