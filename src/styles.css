@@ -24,6 +24,67 @@ input {
   font: inherit;
 }
 
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  width: min(260px, 78vw);
+  padding: 8px 10px;
+  border: 1px solid rgba(142, 210, 255, 0.28);
+  border-radius: 7px;
+  background: rgba(12, 15, 16, 0.96);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  color: #eef6f3;
+  content: attr(data-tooltip);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  transform: translate(-50%, 4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  white-space: normal;
+}
+
+[data-tooltip]::before {
+  position: absolute;
+  z-index: 21;
+  bottom: calc(100% + 3px);
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  border-right: 1px solid rgba(142, 210, 255, 0.28);
+  border-bottom: 1px solid rgba(142, 210, 255, 0.28);
+  background: rgba(12, 15, 16, 0.96);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px) rotate(45deg);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:hover::before,
+[data-tooltip]:focus-visible::after,
+[data-tooltip]:focus-visible::before,
+[data-tooltip]:focus-within::after,
+[data-tooltip]:focus-within::before {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+[data-tooltip]:hover::before,
+[data-tooltip]:focus-visible::before,
+[data-tooltip]:focus-within::before {
+  transform: translate(-50%, 0) rotate(45deg);
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 292px minmax(420px, 1fr) 304px;
@@ -328,8 +389,12 @@ canvas:active {
   background: #242829;
 }
 
+.mini-grid span span,
 .mini-grid b {
   display: block;
+}
+
+.mini-grid b {
   margin-top: 4px;
   color: #eff2ee;
 }

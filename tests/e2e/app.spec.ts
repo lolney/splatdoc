@@ -9,6 +9,13 @@ test('loads the diagnostic cockpit and switches modes', async ({ page }) => {
   await expect(page.getByText('View Estimate')).toBeVisible();
 });
 
+test('explains diagnostic controls with tooltips', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: /Opacity view/ })).toHaveAttribute('data-tooltip', /Maps each splat by alpha contribution/);
+
+  await expect(page.getByLabel(/Opacity floor/)).toHaveAttribute('aria-label', /Splats below this alpha/);
+});
+
 test('shows graceful unsupported file status', async ({ page }) => {
   await page.goto('/');
   const chooserPromise = page.waitForEvent('filechooser');

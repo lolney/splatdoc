@@ -38,6 +38,24 @@ const VIEW_ICONS: Record<ViewMode, typeof Eye> = {
 
 const VIEW_MODES = Object.keys(VIEW_LABELS) as ViewMode[];
 
+const VIEW_DESCRIPTIONS: Record<ViewMode, string> = {
+  normal: 'Composite splats with their source colors and opacity. Use this as the baseline before switching to a diagnostic overlay.',
+  opacity: 'Maps each splat by alpha contribution. Bright hot regions are carrying the image; dark regions barely affect the final frame.',
+  density: 'Shows where many splats occupy the same local volume. Dense clusters often explain cloudy regions or slow views.',
+  overdraw: 'Highlights areas likely to blend many translucent splats over the same pixels. Hot regions are expensive and may look muddy.',
+  projectedSize: 'Colors splats by their screen-space footprint from the current camera. Oversized splats are common soup and blur culprits.',
+  outliers: 'Flags spatial floaters far from the scene mass. These are candidates for cleanup or simplification masks.',
+  dead: 'Finds low-opacity, low-density splats that contribute little to the image. These are early simplification candidates.',
+  blurRisk: 'Combines size, opacity, and outlier signals to answer why this angle looks like soup.',
+  simplificationPreview: 'Previews which splats would be faded by the current thresholds. This is reversible and does not export changes.',
+};
+
+const THRESHOLD_DESCRIPTIONS: Record<keyof DiagnosticThresholds, string> = {
+  opacityFloor: 'Splats below this alpha are treated as low contribution and become candidates for dead-splat and simplification views.',
+  outlierPercentile: 'Controls how aggressively far-away splats are flagged as floaters. Lower values mark more splats as outliers.',
+  simplificationAggression: 'Adjusts how strongly the preview fades dead, low-contribution, and outlier splats.',
+};
+
 const DEFAULT_CAMERA: CameraState = {
   target: [0, 0, 0],
   yaw: 0.6,
@@ -225,8 +243,8 @@ export default function App() {
                 <button
                   key={mode}
                   className={mode === ui.viewMode ? 'mode active' : 'mode'}
-                  title={VIEW_LABELS[mode]}
-                  aria-label={`${VIEW_LABELS[mode]} view`}
+                  aria-label={`${VIEW_LABELS[mode]} view: ${VIEW_DESCRIPTIONS[mode]}`}
+                  data-tooltip={VIEW_DESCRIPTIONS[mode]}
                   onClick={() => updateUi({ viewMode: mode })}
                 >
                   <Icon size={17} />
@@ -239,9 +257,9 @@ export default function App() {
 
         <section className="panel">
           <h2>Thresholds</h2>
-          <Slider label="Opacity floor" value={ui.thresholds.opacityFloor} min={0} max={0.5} step={0.01} onChange={(value) => updateUi({ thresholds: { ...ui.thresholds, opacityFloor: value } })} />
-          <Slider label="Outlier cutoff" value={ui.thresholds.outlierPercentile} min={0.75} max={1} step={0.01} onChange={(value) => updateUi({ thresholds: { ...ui.thresholds, outlierPercentile: value } })} />
-          <Slider label="Simplify" value={ui.thresholds.simplificationAggression} min={0} max={1} step={0.01} onChange={(value) => updateUi({ thresholds: { ...ui.thresholds, simplificationAggression: value } })} />
+          <Slider label="Opacity floor" description={THRESHOLD_DESCRIPTIONS.opacityFloor} value={ui.thresholds.opacityFloor} min={0} max={0.5} step={0.01} onChange={(value) => updateUi({ thresholds: { ...ui.thresholds, opacityFloor: value } })} />
+          <Slider label="Outlier cutoff" description={THRESHOLD_DESCRIPTIONS.outlierPercentile} value={ui.thresholds.outlierPercentile} min={0.75} max={1} step={0.01} onChange={(value) => updateUi({ thresholds: { ...ui.thresholds, outlierPercentile: value } })} />
+          <Slider label="Simplify" description={THRESHOLD_DESCRIPTIONS.simplificationAggression} value={ui.thresholds.simplificationAggression} min={0} max={1} step={0.01} onChange={(value) => updateUi({ thresholds: { ...ui.thresholds, simplificationAggression: value } })} />
         </section>
       </aside>
 
@@ -251,7 +269,7 @@ export default function App() {
             <strong>{scene.name}</strong>
             <span>{scene.count.toLocaleString()} splats</span>
           </div>
-          <div className="status"><MousePointer2 size={15} /> drag orbit · wheel zoom</div>
+          <div className="status" data-tooltip="Drag the viewport to orbit the current camera. Use the mouse wheel or trackpad scroll to zoom toward or away from the scene."><MousePointer2 size={15} /> drag orbit · wheel zoom</div>
         </div>
         <div className="canvas-stage">
           <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onWheel={onWheel} />
@@ -263,10 +281,10 @@ export default function App() {
       <aside className="right-rail">
         <section className="panel hero-metric">
           <h2><Gauge size={17} /> View Estimate</h2>
-          <div className="metric-row"><span>Frame cost</span><strong>{estimate.estimatedMs.toFixed(1)} ms</strong></div>
-          <div className="metric-row"><span>Soup risk</span><strong>{Math.round(estimate.soupRisk * 100)}%</strong></div>
-          <div className="metric-row"><span>Overdraw</span><strong>{Math.round(estimate.overdrawScore * 100)}%</strong></div>
-          <div className="metric-row"><span>Flagged</span><strong>{estimate.flaggedSplats.toLocaleString()}</strong></div>
+          <div className="metric-row" data-tooltip="Rough CPU/GPU cost estimate for this viewpoint based on splat count, projected size, and overdraw."><span>Frame cost</span><strong>{estimate.estimatedMs.toFixed(1)} ms</strong></div>
+          <div className="metric-row" data-tooltip="Approximate chance that this angle will look cloudy or smeared because of large, dense, or suspicious splats."><span>Soup risk</span><strong>{Math.round(estimate.soupRisk * 100)}%</strong></div>
+          <div className="metric-row" data-tooltip="Estimated repeated blending work for the current camera. Higher overdraw means more translucent splats pile onto the same pixels."><span>Overdraw</span><strong>{Math.round(estimate.overdrawScore * 100)}%</strong></div>
+          <div className="metric-row" data-tooltip="Number of splats currently caught by opacity, outlier, or dead-splat thresholds."><span>Flagged</span><strong>{estimate.flaggedSplats.toLocaleString()}</strong></div>
         </section>
 
         <section className="panel">
@@ -280,15 +298,15 @@ export default function App() {
             estimate.soupRisk,
           ]} />
           <div className="mini-grid">
-            <span>P50 size <b>{estimate.projectedSizeP50.toFixed(1)}px</b></span>
-            <span>P95 size <b>{estimate.projectedSizeP95.toFixed(1)}px</b></span>
+            <span data-tooltip="Median projected splat radius in pixels from the current camera."><span>P50 size</span> <b>{estimate.projectedSizeP50.toFixed(1)}px</b></span>
+            <span data-tooltip="95th percentile projected splat radius in pixels. Big values point to blur and soup risk."><span>P95 size</span> <b>{estimate.projectedSizeP95.toFixed(1)}px</b></span>
           </div>
         </section>
 
         <section className="panel stress">
           <h2><Camera size={17} /> Stress Path</h2>
           {stress.slice(0, 4).map((sample) => (
-            <button key={sample.label} onClick={() => updateUi({ camera: sample.camera })}>
+            <button key={sample.label} data-tooltip="Jump to a sampled camera angle ranked by combined soup and overdraw risk." onClick={() => updateUi({ camera: sample.camera })}>
               <span>{sample.label}</span>
               <b>{Math.round((sample.soupRisk + sample.overdrawScore) * 50)} risk</b>
             </button>
@@ -299,11 +317,11 @@ export default function App() {
   );
 }
 
-function Slider({ label, value, min, max, step, onChange }: { label: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void }) {
+function Slider({ label, description, value, min, max, step, onChange }: { label: string; description: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void }) {
   return (
-    <label className="slider">
+    <label className="slider" data-tooltip={description}>
       <span>{label}<b>{value.toFixed(2)}</b></span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input type="range" aria-label={`${label}: ${description}`} min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
     </label>
   );
 }

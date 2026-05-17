@@ -2,6 +2,8 @@
 
 Toy-sized, static WebGPU diagnostic viewer for Gaussian splats.
 
+Live site: https://lolney.github.io/splatdoc/
+
 ## Features
 
 - Load local `.ply` and `.splat` files in the browser
@@ -20,6 +22,7 @@ npm run dev
 
 ```sh
 npm run build
+npm run build:pages
 npm test
 npm run test:e2e
 ```
