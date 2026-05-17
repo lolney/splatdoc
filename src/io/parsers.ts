@@ -138,20 +138,32 @@ function parseAsciiPly(buffer: ArrayBuffer, header: PlyHeader, name: string): Sp
 }
 
 function parseBinaryLittlePly(buffer: ArrayBuffer, header: PlyHeader, name: string): SplatScene {
-  const view = new DataView(buffer, header.dataOffset);
-  const columns = propertyColumns(header);
+  const view = new DataView(buffer);
+  const offsets = propertyByteOffsets(header);
   const data = allocate(header.vertexCount);
-  let offset = 0;
+  const rowStride = header.properties.reduce((sum, property) => sum + propertySize(property.type), 0);
 
   for (let i = 0; i < header.vertexCount; i++) {
-    const row: Record<string, number> = {};
-    for (const property of header.properties) {
-      row[property.name] = readScalar(view, offset, property.type);
-      offset += TYPE_SIZE[property.type] ?? 0;
-    }
-    assignVertex(data, i, columns, (name) => row[name]);
+    const rowBase = header.dataOffset + i * rowStride;
+    assignVertex(data, i, offsets.columns, (propertyName) => {
+      const offset = offsets.byName[propertyName];
+      return offset === undefined ? undefined : readScalar(view, rowBase + offset.byteOffset, offset.type);
+    });
   }
   return createScene(name, data.positions, data.scales, data.colors, data.opacities, data.rotations);
+}
+
+function propertyByteOffsets(header: PlyHeader): { columns: Record<string, number>; byName: Record<string, { byteOffset: number; type: string }> } {
+  let byteOffset = 0;
+  const byName: Record<string, { byteOffset: number; type: string }> = {};
+  const columns: Record<string, number> = {};
+  for (let i = 0; i < header.properties.length; i++) {
+    const property = header.properties[i];
+    byName[property.name] = { byteOffset, type: property.type };
+    columns[property.name] = i;
+    byteOffset += propertySize(property.type);
+  }
+  return { columns, byName };
 }
 
 function assignVertex(
@@ -234,6 +246,12 @@ function readScalar(view: DataView, offset: number, type: string): number {
     default:
       throw new Error(`Unsupported PLY property type "${type}".`);
   }
+}
+
+function propertySize(type: string): number {
+  const size = TYPE_SIZE[type];
+  if (!size) throw new Error(`Unsupported PLY property type "${type}".`);
+  return size;
 }
 
 function sigmoid(value: number): number {

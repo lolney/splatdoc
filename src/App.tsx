@@ -56,6 +56,9 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<WebGpuSplatRenderer | null>(null);
   const dragRef = useRef<{ x: number; y: number; camera: CameraState } | null>(null);
+  const liveCameraRef = useRef<CameraState>(DEFAULT_CAMERA);
+  const pendingCameraRef = useRef<CameraState | null>(null);
+  const frameRef = useRef<number | null>(null);
   const [ui, setUi] = useLocalStorageState<PersistedUi>('splatdoc-ui', {
     viewMode: 'normal',
     thresholds: DEFAULT_THRESHOLDS,
@@ -65,7 +68,14 @@ export default function App() {
   const [status, setStatus] = useState('Generated demo scene loaded. Drop a .ply or .splat to inspect your own.');
   const [webGpuError, setWebGpuError] = useState<string | null>(null);
   const estimate = useMemo(() => estimateView(scene, ui.camera, ui.thresholds), [scene, ui.camera, ui.thresholds]);
-  const stress = useMemo(() => runStressTest(scene, ui.camera, ui.thresholds), [scene, ui.camera, ui.thresholds]);
+  const stressCamera = useMemo<CameraState>(() => ({
+    target: scene.bounds.center,
+    yaw: 0,
+    pitch: 0,
+    distance: scene.bounds.radius * 2.8,
+    fov: ui.camera.fov,
+  }), [scene, ui.camera.fov]);
+  const stress = useMemo(() => runStressTest(scene, stressCamera, ui.thresholds), [scene, stressCamera, ui.thresholds]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -102,12 +112,17 @@ export default function App() {
   }, [scene]);
 
   useEffect(() => {
+    liveCameraRef.current = ui.camera;
     const renderer = rendererRef.current;
     renderer?.setViewMode(ui.viewMode);
     renderer?.setThresholds(ui.thresholds);
     if (renderer) renderer.render(ui.camera);
     else if (canvasRef.current) drawCanvasFallback(canvasRef.current, scene, ui.camera, ui.viewMode, ui.thresholds);
   }, [ui]);
+
+  useEffect(() => () => {
+    if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
+  }, []);
 
   useEffect(() => {
     const onResize = () => {
@@ -122,6 +137,19 @@ export default function App() {
   const updateUi = useCallback((patch: Partial<PersistedUi>) => {
     setUi({ ...ui, ...patch });
   }, [setUi, ui]);
+
+  const renderPreviewCamera = useCallback((camera: CameraState) => {
+    pendingCameraRef.current = camera;
+    if (frameRef.current !== null) return;
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      const nextCamera = pendingCameraRef.current;
+      if (!nextCamera) return;
+      const renderer = rendererRef.current;
+      if (renderer) renderer.render(nextCamera);
+      else if (canvasRef.current) drawCanvasFallback(canvasRef.current, scene, nextCamera, ui.viewMode, ui.thresholds);
+    });
+  }, [scene, ui.thresholds, ui.viewMode]);
 
   const loadFile = useCallback(async (file: File) => {
     setStatus(`Loading ${file.name}...`);
@@ -144,13 +172,19 @@ export default function App() {
     if (!dragRef.current) return;
     const dx = event.clientX - dragRef.current.x;
     const dy = event.clientY - dragRef.current.y;
-    updateUi({
-      camera: {
-        ...dragRef.current.camera,
-        yaw: dragRef.current.camera.yaw + dx * 0.008,
-        pitch: Math.max(-1.35, Math.min(1.35, dragRef.current.camera.pitch + dy * 0.006)),
-      },
-    });
+    const camera = {
+      ...dragRef.current.camera,
+      yaw: dragRef.current.camera.yaw + dx * 0.008,
+      pitch: Math.max(-1.35, Math.min(1.35, dragRef.current.camera.pitch + dy * 0.006)),
+    };
+    liveCameraRef.current = camera;
+    renderPreviewCamera(camera);
+  };
+
+  const onPointerUp = () => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    updateUi({ camera: liveCameraRef.current });
   };
 
   const onWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
@@ -220,7 +254,7 @@ export default function App() {
           <div className="status"><MousePointer2 size={15} /> drag orbit · wheel zoom</div>
         </div>
         <div className="canvas-stage">
-          <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={() => { dragRef.current = null; }} onWheel={onWheel} />
+          <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onWheel={onWheel} />
           {webGpuError && <div className="gpu-fallback"><AlertTriangle size={14} />CPU preview · {webGpuError}</div>}
         </div>
         <p className="load-status">{status}</p>

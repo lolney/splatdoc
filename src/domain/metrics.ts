@@ -22,7 +22,7 @@ export function createScene(
     colors: safeColors,
     opacities: safeOpacities,
     rotations: rotations && rotations.length === count * 4 ? rotations : fillRotations(count),
-    sourceIndices: Uint32Array.from({ length: count }, (_, i) => i),
+    sourceIndices: sourceIndices(count),
     bounds,
     metrics: computeSceneMetrics(positions, safeScales, safeOpacities, bounds.center, bounds.radius),
   };
@@ -44,22 +44,24 @@ export function computeSceneMetrics(
   let scaleTotal = 0;
   let maxScale = 0;
   let opacityTotal = 0;
-  const distances: number[] = [];
+  const distances = new Float32Array(count);
+  const densityGrid = buildDensityGrid(positions, metricCenter, radius);
 
   for (let i = 0; i < count; i++) {
     const s = Math.max(scales[i * 3], scales[i * 3 + 1], scales[i * 3 + 2]);
     const p: Vec3 = [positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]];
     const d = distance(p, metricCenter) / Math.max(radius, 0.0001);
-    distances.push(d);
+    distances[i] = d;
     scaleTotal += s;
     maxScale = Math.max(maxScale, s);
     opacityTotal += opacities[i];
     blurRisk[i] = clamp01((s / Math.max(radius, 0.0001)) * 18 + opacities[i] * 0.2);
   }
 
-  const p85 = percentile(distances, 0.85) || 1;
+  distances.sort();
+  const p85 = distances[Math.min(count - 1, Math.max(0, Math.floor((count - 1) * 0.85)))] || 1;
   for (let i = 0; i < count; i++) {
-    const local = estimateLocalDensity(positions, i, Math.max(radius * 0.035, maxScale * 3), Math.min(count, 1800));
+    const local = densityFor(densityGrid, positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
     density[i] = local;
     outlierScore[i] = clamp01((distances[i] - p85) / Math.max(0.001, 1.4 - p85));
     deadScore[i] = clamp01((1 - opacities[i] * 6) * 0.72 + (1 - density[i] * 0.8) * 0.28);
@@ -145,22 +147,55 @@ export function runStressTest(scene: SplatScene, camera: CameraState, thresholds
     .sort((a, b) => b.soupRisk + b.overdrawScore - (a.soupRisk + a.overdrawScore));
 }
 
-function estimateLocalDensity(positions: Float32Array, index: number, radius: number, maxSamples: number): number {
-  const count = positions.length / 3;
-  const step = Math.max(1, Math.floor(count / maxSamples));
-  const x = positions[index * 3];
-  const y = positions[index * 3 + 1];
-  const z = positions[index * 3 + 2];
-  let hits = 0;
-  let samples = 0;
-  for (let i = 0; i < count; i += step) {
-    const dx = x - positions[i * 3];
-    const dy = y - positions[i * 3 + 1];
-    const dz = z - positions[i * 3 + 2];
-    if (dx * dx + dy * dy + dz * dz < radius * radius) hits++;
-    samples++;
+interface DensityGrid {
+  cells: Uint32Array;
+  gridSize: number;
+  min: Vec3;
+  invCellSize: number;
+}
+
+function buildDensityGrid(positions: Float32Array, center: Vec3, radius: number): DensityGrid {
+  const gridSize = 48;
+  const cells = new Uint32Array(gridSize * gridSize * gridSize);
+  const diameter = Math.max(radius * 2, 0.001);
+  const min: Vec3 = [center[0] - radius, center[1] - radius, center[2] - radius];
+  const invCellSize = gridSize / diameter;
+  for (let i = 0; i < positions.length; i += 3) {
+    const ix = quantizeCell((positions[i] - min[0]) * invCellSize, gridSize);
+    const iy = quantizeCell((positions[i + 1] - min[1]) * invCellSize, gridSize);
+    const iz = quantizeCell((positions[i + 2] - min[2]) * invCellSize, gridSize);
+    cells[ix + gridSize * (iy + gridSize * iz)]++;
   }
-  return samples ? hits / Math.max(1, samples * 0.025) : 0;
+  return { cells, gridSize, min, invCellSize };
+}
+
+function densityFor(grid: DensityGrid, x: number, y: number, z: number): number {
+  const ix = quantizeCell((x - grid.min[0]) * grid.invCellSize, grid.gridSize);
+  const iy = quantizeCell((y - grid.min[1]) * grid.invCellSize, grid.gridSize);
+  const iz = quantizeCell((z - grid.min[2]) * grid.invCellSize, grid.gridSize);
+  let total = 0;
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const x2 = ix + dx;
+        const y2 = iy + dy;
+        const z2 = iz + dz;
+        if (x2 < 0 || y2 < 0 || z2 < 0 || x2 >= grid.gridSize || y2 >= grid.gridSize || z2 >= grid.gridSize) continue;
+        total += grid.cells[x2 + grid.gridSize * (y2 + grid.gridSize * z2)];
+      }
+    }
+  }
+  return total;
+}
+
+function quantizeCell(value: number, gridSize: number): number {
+  return Math.max(0, Math.min(gridSize - 1, Math.floor(value)));
+}
+
+function sourceIndices(count: number): Uint32Array {
+  const indices = new Uint32Array(count);
+  for (let i = 0; i < count; i++) indices[i] = i;
+  return indices;
 }
 
 function normalizeArray(values: Float32Array): Float32Array {

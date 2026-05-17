@@ -1,4 +1,4 @@
-import { clamp01, dot, viewBasis } from '../domain/math';
+import { clamp01, viewBasis } from '../domain/math';
 import type { CameraState, DiagnosticThresholds, SplatScene, ViewMode } from '../domain/types';
 
 const SPLAT_STRIDE = 12 * 4;
@@ -48,12 +48,20 @@ export class WebGpuSplatRenderer {
   }
 
   setViewMode(viewMode: ViewMode): void {
+    if (this.viewMode === viewMode) return;
     this.viewMode = viewMode;
     this.sortedData = undefined;
     this.lastSortKey = '';
   }
 
   setThresholds(thresholds: DiagnosticThresholds): void {
+    if (
+      this.thresholds.opacityFloor === thresholds.opacityFloor
+      && this.thresholds.outlierPercentile === thresholds.outlierPercentile
+      && this.thresholds.simplificationAggression === thresholds.simplificationAggression
+    ) {
+      return;
+    }
     this.thresholds = thresholds;
     this.sortedData = undefined;
     this.lastSortKey = '';
@@ -141,9 +149,9 @@ export class WebGpuSplatRenderer {
 
   private uploadScene(camera: CameraState): void {
     if (!this.device || !this.pipeline || !this.uniformBuffer || !this.scene) return;
-    const sortKey = `${this.viewMode}:${camera.yaw.toFixed(2)}:${camera.pitch.toFixed(2)}:${camera.distance.toFixed(1)}:${this.thresholds.opacityFloor}:${this.thresholds.simplificationAggression}`;
+    const sortKey = `${this.scene.name}:${this.scene.count}:${this.viewMode}:${this.thresholds.opacityFloor}:${this.thresholds.outlierPercentile}:${this.thresholds.simplificationAggression}`;
     if (this.sortedData && sortKey === this.lastSortKey) return;
-    const data = this.buildSortedData(camera);
+    const data = this.buildDisplayData();
     this.splatBuffer?.destroy();
     this.splatBuffer = this.device.createBuffer({
       size: data.byteLength,
@@ -161,22 +169,14 @@ export class WebGpuSplatRenderer {
     this.lastSortKey = sortKey;
   }
 
-  private buildSortedData(camera: CameraState): Float32Array {
+  private buildDisplayData(): Float32Array {
     const scene = this.scene!;
-    const { eye, forward } = viewBasis(camera);
-    const indices = Array.from({ length: scene.count }, (_, i) => i);
-    indices.sort((a, b) => {
-      const da = depthFor(scene, a, eye, forward);
-      const db = depthFor(scene, b, eye, forward);
-      return db - da;
-    });
     const data = new Float32Array(scene.count * 12);
-    for (let out = 0; out < indices.length; out++) {
-      const i = indices[out];
+    for (let i = 0; i < scene.count; i++) {
       const maxScale = Math.max(scene.scales[i * 3], scene.scales[i * 3 + 1], scene.scales[i * 3 + 2]);
       const alpha = scene.opacities[i];
       const metric = metricForMode(scene, i, this.viewMode, this.thresholds);
-      const base = out * 12;
+      const base = i * 12;
       data[base] = scene.positions[i * 3];
       data[base + 1] = scene.positions[i * 3 + 1];
       data[base + 2] = scene.positions[i * 3 + 2];
@@ -186,7 +186,7 @@ export class WebGpuSplatRenderer {
       data[base + 6] = scene.colors[i * 3 + 2];
       data[base + 7] = alpha;
       data[base + 8] = metric;
-      data[base + 9] = depthFor(scene, i, eye, forward);
+      data[base + 9] = 0;
       data[base + 10] = scene.sourceIndices[i];
       data[base + 11] = shouldHideForSimplification(scene, i, this.thresholds) ? 1 : 0;
     }
@@ -196,14 +196,6 @@ export class WebGpuSplatRenderer {
   private viewModeToNumber(mode: ViewMode): number {
     return ['normal', 'opacity', 'density', 'overdraw', 'projectedSize', 'outliers', 'dead', 'blurRisk', 'simplificationPreview'].indexOf(mode);
   }
-}
-
-function depthFor(scene: SplatScene, i: number, eye: [number, number, number], forward: [number, number, number]): number {
-  return dot([
-    scene.positions[i * 3] - eye[0],
-    scene.positions[i * 3 + 1] - eye[1],
-    scene.positions[i * 3 + 2] - eye[2],
-  ], forward);
 }
 
 function metricForMode(scene: SplatScene, i: number, mode: ViewMode, thresholds: DiagnosticThresholds): number {
