@@ -36,6 +36,21 @@ describe('demo scene diagnostics', () => {
     expect(above90).toBeGreaterThan(scene.count * 0.01);
   });
 
+  it('contains enough dead-score variation for cleanup thresholds', () => {
+    let above25 = 0;
+    let above50 = 0;
+    let above65 = 0;
+    for (const score of scene.metrics.deadScore) {
+      if (score > 0.25) above25++;
+      if (score > 0.5) above50++;
+      if (score > 0.65) above65++;
+    }
+
+    expect(above25).toBeGreaterThan(scene.count * 0.25);
+    expect(above50).toBeGreaterThan(scene.count * 0.08);
+    expect(above65).toBeGreaterThan(scene.count * 0.005);
+  });
+
   it('shows meaningful flagged-count movement across thresholds', () => {
     const camera = { target: scene.bounds.center, yaw: 0.6, pitch: 0.28, distance: scene.bounds.radius * 2.8, fov: 55 };
     const permissive = {

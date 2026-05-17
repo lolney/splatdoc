@@ -66,7 +66,9 @@ export function computeSceneMetrics(
     const local = densityFor(densityGrid, positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
     density[i] = local;
     outlierScore[i] = clamp01((distances[i] - p70) / Math.max(0.001, p98 - p70));
-    deadScore[i] = clamp01((1 - opacities[i] * 6) * 0.72 + (1 - density[i] * 0.8) * 0.28);
+    const lowOpacity = clamp01((0.62 - opacities[i]) / 0.62);
+    const lowDensity = clamp01(1 - density[i]);
+    deadScore[i] = clamp01(lowOpacity * 0.72 + lowDensity * 0.28);
   }
 
   return {

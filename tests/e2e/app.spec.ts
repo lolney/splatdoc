@@ -33,6 +33,36 @@ test('threshold sliders drive simplification preview', async ({ page }) => {
   await expect(page.locator('.metric-row').filter({ hasText: 'Flagged' }).locator('strong')).toHaveText(/^[4-7],\d{3}$/);
 });
 
+test('simplify remains visible when every threshold is active', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /Simplify view/ }).click();
+  await expect(page.getByRole('slider')).toHaveCount(7);
+  await page.getByRole('slider', { name: /Opacity floor/ }).fill('0.05');
+  await page.getByRole('slider', { name: /Density cutoff/ }).fill('0.05');
+  await page.getByRole('slider', { name: /Overdraw cutoff/ }).fill('0.05');
+  await page.getByRole('slider', { name: /Size cutoff/ }).fill('0.05');
+  await page.getByRole('slider', { name: /Outlier cutoff/ }).fill('0.51');
+  await page.getByRole('slider', { name: /Dead cutoff/ }).fill('0.05');
+  await page.getByRole('slider', { name: /Soup cutoff/ }).fill('0.05');
+
+  const litRatio = await page.locator('canvas').evaluate((element) => {
+    const canvas = element as HTMLCanvasElement;
+    const probe = document.createElement('canvas');
+    probe.width = Math.min(320, canvas.width || canvas.clientWidth);
+    probe.height = Math.min(220, canvas.height || canvas.clientHeight);
+    const context = probe.getContext('2d', { willReadFrequently: true });
+    if (!context) return 0;
+    context.drawImage(canvas, 0, 0, probe.width, probe.height);
+    const data = context.getImageData(0, 0, probe.width, probe.height).data;
+    let lit = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if ((data[i] + data[i + 1] + data[i + 2]) / 3 > 18) lit++;
+    }
+    return lit / (data.length / 4);
+  });
+  expect(litRatio).toBeGreaterThan(0.2);
+});
+
 test('shows graceful unsupported file status', async ({ page }) => {
   await page.goto('/');
   const chooserPromise = page.waitForEvent('filechooser');
