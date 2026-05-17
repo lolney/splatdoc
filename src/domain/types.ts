@@ -50,7 +50,12 @@ export interface CameraState {
 
 export interface DiagnosticThresholds {
   opacityFloor: number;
+  densityCutoff: number;
+  overdrawCutoff: number;
+  projectedSizeCutoff: number;
   outlierPercentile: number;
+  deadCutoff: number;
+  blurRiskCutoff: number;
 }
 
 export interface ViewEstimate {
@@ -83,5 +88,10 @@ export const VIEW_LABELS: Record<ViewMode, string> = {
 
 export const DEFAULT_THRESHOLDS: DiagnosticThresholds = {
   opacityFloor: 0.08,
+  densityCutoff: 0.72,
+  overdrawCutoff: 0.64,
+  projectedSizeCutoff: 0.58,
   outlierPercentile: 0.96,
+  deadCutoff: 0.65,
+  blurRiskCutoff: 0.68,
 };

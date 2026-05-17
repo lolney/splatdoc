@@ -113,7 +113,15 @@ export function estimateView(scene: SplatScene, camera: CameraState, thresholds:
     const sizeRisk = clamp01(size / 36);
     overdraw += sizeRisk * alpha;
     soup += (scene.metrics.blurRisk[i] * 0.45 + scene.metrics.outlierScore[i] * 0.2 + sizeRisk * 0.35) * alpha;
-    if (alpha < thresholds.opacityFloor || scene.metrics.outlierScore[i] > thresholds.outlierPercentile || scene.metrics.deadScore[i] > 0.65) {
+    if (
+      alpha < thresholds.opacityFloor
+      || scene.metrics.density[i] > thresholds.densityCutoff
+      || sizeRisk > thresholds.projectedSizeCutoff
+      || clamp01(alpha * scene.metrics.density[i] + sizeRisk * 0.65) > thresholds.overdrawCutoff
+      || scene.metrics.outlierScore[i] > thresholds.outlierPercentile
+      || scene.metrics.deadScore[i] > thresholds.deadCutoff
+      || scene.metrics.blurRisk[i] > thresholds.blurRiskCutoff
+    ) {
       flagged++;
     }
   }

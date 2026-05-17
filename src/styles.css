@@ -184,6 +184,12 @@ h1 {
   font-weight: 700;
 }
 
+.panel-note {
+  color: #aab2ac;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .mode-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

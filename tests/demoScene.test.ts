@@ -38,9 +38,19 @@ describe('demo scene diagnostics', () => {
 
   it('shows meaningful flagged-count movement across thresholds', () => {
     const camera = { target: scene.bounds.center, yaw: 0.6, pitch: 0.28, distance: scene.bounds.radius * 2.8, fov: 55 };
-    const loose = estimateView(scene, camera, { ...DEFAULT_THRESHOLDS, opacityFloor: 0, outlierPercentile: 1 });
-    const opacity = estimateView(scene, camera, { ...DEFAULT_THRESHOLDS, opacityFloor: 0.5, outlierPercentile: 1 });
-    const outliers = estimateView(scene, camera, { ...DEFAULT_THRESHOLDS, opacityFloor: 0, outlierPercentile: 0.5 });
+    const permissive = {
+      ...DEFAULT_THRESHOLDS,
+      opacityFloor: 0,
+      densityCutoff: 1,
+      overdrawCutoff: 1,
+      projectedSizeCutoff: 1,
+      outlierPercentile: 1,
+      deadCutoff: 1,
+      blurRiskCutoff: 1,
+    };
+    const loose = estimateView(scene, camera, permissive);
+    const opacity = estimateView(scene, camera, { ...permissive, opacityFloor: 0.5 });
+    const outliers = estimateView(scene, camera, { ...permissive, outlierPercentile: 0.5 });
 
     expect(opacity.flaggedSplats - loose.flaggedSplats).toBeGreaterThan(scene.count * 0.35);
     expect(outliers.flaggedSplats - loose.flaggedSplats).toBeGreaterThan(scene.count * 0.12);

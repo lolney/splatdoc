@@ -47,13 +47,39 @@ const VIEW_DESCRIPTIONS: Record<ViewMode, string> = {
   outliers: 'Flags spatial floaters far from the scene mass. These are candidates for cleanup or simplification masks.',
   dead: 'Finds low-opacity, low-density splats that contribute little to the image. These are early simplification candidates.',
   blurRisk: 'Combines size, opacity, and outlier signals to answer why this angle looks like soup.',
-  simplificationPreview: 'Previews which splats would be faded by Opacity floor and Outlier cutoff. This is reversible and does not export changes.',
+  simplificationPreview: 'Previews which splats would be faded by all active diagnostic thresholds. This is reversible and does not export changes.',
 };
 
 const THRESHOLD_DESCRIPTIONS: Record<keyof DiagnosticThresholds, string> = {
   opacityFloor: 'Splats below this alpha are treated as low contribution and become candidates for dead-splat and simplification views.',
+  densityCutoff: 'Splats above this local density score are treated as crowded regions that can look cloudy or cost extra blending.',
+  overdrawCutoff: 'Splats above this estimated blend-work score are treated as likely overdraw contributors.',
+  projectedSizeCutoff: 'Splats above this normalized screen-size score are treated as oversized blur and soup candidates.',
   outlierPercentile: 'Controls how aggressively far-away splats are flagged as floaters. Lower values mark more of the outer halo and loose points.',
+  deadCutoff: 'Splats above this dead-score are treated as low-contribution cleanup candidates.',
+  blurRiskCutoff: 'Splats above this soup-risk score are treated as likely contributors to blurry or muddy regions.',
 };
+
+type ThresholdKey = keyof DiagnosticThresholds;
+
+interface ThresholdConfig {
+  key: ThresholdKey;
+  mode: Exclude<ViewMode, 'normal' | 'simplificationPreview'>;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+}
+
+const THRESHOLD_CONFIGS: ThresholdConfig[] = [
+  { key: 'opacityFloor', mode: 'opacity', label: 'Opacity floor', min: 0, max: 0.5, step: 0.01 },
+  { key: 'densityCutoff', mode: 'density', label: 'Density cutoff', min: 0, max: 1, step: 0.01 },
+  { key: 'overdrawCutoff', mode: 'overdraw', label: 'Overdraw cutoff', min: 0, max: 1, step: 0.01 },
+  { key: 'projectedSizeCutoff', mode: 'projectedSize', label: 'Size cutoff', min: 0, max: 1, step: 0.01 },
+  { key: 'outlierPercentile', mode: 'outliers', label: 'Outlier cutoff', min: 0.5, max: 1, step: 0.01 },
+  { key: 'deadCutoff', mode: 'dead', label: 'Dead cutoff', min: 0, max: 1, step: 0.01 },
+  { key: 'blurRiskCutoff', mode: 'blurRisk', label: 'Soup cutoff', min: 0, max: 1, step: 0.01 },
+];
 
 const FILE_INPUT_DESCRIPTION = 'Load a local .ply or .splat file. Processing stays in your browser; scene data is not uploaded.';
 const CAMERA_DESCRIPTION = 'Interactive splat viewport. Drag to orbit the scene and use the wheel or trackpad scroll to zoom.';
@@ -96,7 +122,12 @@ export default function App() {
   const [status, setStatus] = useState('Generated demo scene loaded. Drop a .ply or .splat to inspect your own.');
   const [webGpuError, setWebGpuError] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
-  const estimate = useMemo(() => estimateView(scene, ui.camera, ui.thresholds), [scene, ui.camera, ui.thresholds]);
+  const thresholds = useMemo(() => normalizeThresholds(ui.thresholds), [ui.thresholds]);
+  const visibleThresholds = useMemo(() => {
+    if (ui.viewMode === 'simplificationPreview') return THRESHOLD_CONFIGS;
+    return THRESHOLD_CONFIGS.filter((config) => config.mode === ui.viewMode);
+  }, [ui.viewMode]);
+  const estimate = useMemo(() => estimateView(scene, ui.camera, thresholds), [scene, ui.camera, thresholds]);
   const stressCamera = useMemo<CameraState>(() => ({
     target: scene.bounds.center,
     yaw: 0,
@@ -104,13 +135,13 @@ export default function App() {
     distance: scene.bounds.radius * 2.8,
     fov: ui.camera.fov,
   }), [scene, ui.camera.fov]);
-  const stress = useMemo(() => runStressTest(scene, stressCamera, ui.thresholds), [scene, stressCamera, ui.thresholds]);
+  const stress = useMemo(() => runStressTest(scene, stressCamera, thresholds), [scene, stressCamera, thresholds]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     let disposed = false;
-    const renderer = new WebGpuSplatRenderer(canvas, ui.thresholds);
+    const renderer = new WebGpuSplatRenderer(canvas, thresholds);
     rendererRef.current = renderer;
     withTimeout(renderer.init(), 2200)
       .then(() => {
@@ -124,7 +155,7 @@ export default function App() {
         renderer.dispose();
         rendererRef.current = null;
         setWebGpuError(error instanceof Error ? error.message : 'WebGPU initialization failed.');
-        drawCanvasFallback(canvas, scene, ui.camera, ui.viewMode, ui.thresholds);
+        drawCanvasFallback(canvas, scene, ui.camera, ui.viewMode, thresholds);
       });
     return () => {
       disposed = true;
@@ -137,17 +168,17 @@ export default function App() {
     const renderer = rendererRef.current;
     renderer?.setScene(scene);
     if (renderer) renderer.render(ui.camera);
-    else if (canvasRef.current) drawCanvasFallback(canvasRef.current, scene, ui.camera, ui.viewMode, ui.thresholds);
+    else if (canvasRef.current) drawCanvasFallback(canvasRef.current, scene, ui.camera, ui.viewMode, thresholds);
   }, [scene]);
 
   useEffect(() => {
     liveCameraRef.current = ui.camera;
     const renderer = rendererRef.current;
     renderer?.setViewMode(ui.viewMode);
-    renderer?.setThresholds(ui.thresholds);
+    renderer?.setThresholds(thresholds);
     if (renderer) renderer.render(ui.camera);
-    else if (canvasRef.current) drawCanvasFallback(canvasRef.current, scene, ui.camera, ui.viewMode, ui.thresholds);
-  }, [ui]);
+    else if (canvasRef.current) drawCanvasFallback(canvasRef.current, scene, ui.camera, ui.viewMode, thresholds);
+  }, [ui, thresholds]);
 
   useEffect(() => () => {
     if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
@@ -157,7 +188,7 @@ export default function App() {
     const onResize = () => {
       const renderer = rendererRef.current;
       if (renderer) renderer.render(ui.camera);
-      else if (canvasRef.current) drawCanvasFallback(canvasRef.current, scene, ui.camera, ui.viewMode, ui.thresholds);
+      else if (canvasRef.current) drawCanvasFallback(canvasRef.current, scene, ui.camera, ui.viewMode, thresholds);
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
@@ -168,7 +199,7 @@ export default function App() {
   }, [setUi, ui]);
 
   const updateThresholds = useCallback((thresholds: DiagnosticThresholds) => {
-    setUi({ ...ui, thresholds, viewMode: 'simplificationPreview' });
+    setUi({ ...ui, thresholds: normalizeThresholds(thresholds) });
   }, [setUi, ui]);
 
   const showTooltip = useCallback((text: string, element: HTMLElement) => {
@@ -201,9 +232,9 @@ export default function App() {
       if (!nextCamera) return;
       const renderer = rendererRef.current;
       if (renderer) renderer.render(nextCamera);
-      else if (canvasRef.current) drawCanvasFallback(canvasRef.current, scene, nextCamera, ui.viewMode, ui.thresholds);
+      else if (canvasRef.current) drawCanvasFallback(canvasRef.current, scene, nextCamera, ui.viewMode, thresholds);
     });
-  }, [scene, ui.thresholds, ui.viewMode]);
+  }, [scene, thresholds, ui.viewMode]);
 
   const loadFile = useCallback(async (file: File) => {
     setStatus(`Loading ${file.name}...`);
@@ -293,8 +324,20 @@ export default function App() {
 
         <section className="panel">
           <h2>Thresholds</h2>
-          <Slider label="Opacity floor" description={THRESHOLD_DESCRIPTIONS.opacityFloor} tooltipProps={tooltipProps(THRESHOLD_DESCRIPTIONS.opacityFloor)} value={ui.thresholds.opacityFloor} min={0} max={0.5} step={0.01} onChange={(value) => updateThresholds({ ...ui.thresholds, opacityFloor: value })} />
-          <Slider label="Outlier cutoff" description={THRESHOLD_DESCRIPTIONS.outlierPercentile} tooltipProps={tooltipProps(THRESHOLD_DESCRIPTIONS.outlierPercentile)} value={ui.thresholds.outlierPercentile} min={0.5} max={1} step={0.01} onChange={(value) => updateThresholds({ ...ui.thresholds, outlierPercentile: value })} />
+          {visibleThresholds.length === 0 && <p className="panel-note">Choose a diagnostic view to tune its threshold.</p>}
+          {visibleThresholds.map((config) => (
+            <Slider
+              key={config.key}
+              label={config.label}
+              description={THRESHOLD_DESCRIPTIONS[config.key]}
+              tooltipProps={tooltipProps(THRESHOLD_DESCRIPTIONS[config.key])}
+              value={thresholds[config.key]}
+              min={config.min}
+              max={config.max}
+              step={config.step}
+              onChange={(value) => updateThresholds({ ...thresholds, [config.key]: value })}
+            />
+          ))}
         </section>
       </aside>
 
@@ -319,7 +362,7 @@ export default function App() {
           <div className="metric-row" {...tooltipProps('Rough CPU/GPU cost estimate for this viewpoint based on splat count, projected size, and overdraw.')}><span>Frame cost</span><strong>{estimate.estimatedMs.toFixed(1)} ms</strong></div>
           <div className="metric-row" {...tooltipProps('Approximate chance that this angle will look cloudy or smeared because of large, dense, or suspicious splats.')}><span>Soup risk</span><strong>{Math.round(estimate.soupRisk * 100)}%</strong></div>
           <div className="metric-row" {...tooltipProps('Estimated repeated blending work for the current camera. Higher overdraw means more translucent splats pile onto the same pixels.')}><span>Overdraw</span><strong>{Math.round(estimate.overdrawScore * 100)}%</strong></div>
-          <div className="metric-row" {...tooltipProps('Number of splats currently caught by opacity, outlier, or dead-splat thresholds.')}><span>Flagged</span><strong>{estimate.flaggedSplats.toLocaleString()}</strong></div>
+          <div className="metric-row" {...tooltipProps('Number of splats currently caught by the active opacity, density, overdraw, size, floater, dead, or soup thresholds.')}><span>Flagged</span><strong>{estimate.flaggedSplats.toLocaleString()}</strong></div>
         </section>
 
         <section className="panel">
@@ -404,6 +447,18 @@ function Histogram({ values }: { values: number[] }) {
       {values.map((value, index) => <i key={index} style={{ height: `${Math.max(8, Math.min(100, value * 100))}%` }} />)}
     </div>
   );
+}
+
+function normalizeThresholds(thresholds: Partial<DiagnosticThresholds> | undefined): DiagnosticThresholds {
+  return {
+    opacityFloor: thresholds?.opacityFloor ?? DEFAULT_THRESHOLDS.opacityFloor,
+    densityCutoff: thresholds?.densityCutoff ?? DEFAULT_THRESHOLDS.densityCutoff,
+    overdrawCutoff: thresholds?.overdrawCutoff ?? DEFAULT_THRESHOLDS.overdrawCutoff,
+    projectedSizeCutoff: thresholds?.projectedSizeCutoff ?? DEFAULT_THRESHOLDS.projectedSizeCutoff,
+    outlierPercentile: thresholds?.outlierPercentile ?? DEFAULT_THRESHOLDS.outlierPercentile,
+    deadCutoff: thresholds?.deadCutoff ?? DEFAULT_THRESHOLDS.deadCutoff,
+    blurRiskCutoff: thresholds?.blurRiskCutoff ?? DEFAULT_THRESHOLDS.blurRiskCutoff,
+  };
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

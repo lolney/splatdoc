@@ -37,7 +37,7 @@ export function drawCanvasFallback(
     const size = Math.max(scene.scales[i * 3], scene.scales[i * 3 + 1], scene.scales[i * 3 + 2]);
     const r = Math.max(1.2, Math.min(42, (size * fovScale / depth) * height));
     const metric = metricFor(scene, i, mode, thresholds);
-    const fade = simplificationFade(scene, i, thresholds);
+    const fade = thresholdSignal(scene, i, mode, thresholds);
     const color = mode === 'normal' ? rgb(scene.colors[i * 3], scene.colors[i * 3 + 1], scene.colors[i * 3 + 2]) : heat(metric);
     items.push({ x, y, r, depth, color, alpha: scene.opacities[i] * (mode === 'normal' ? 0.72 : 0.84), fade });
   }
@@ -45,7 +45,12 @@ export function drawCanvasFallback(
   items.sort((a, b) => b.depth - a.depth);
   ctx.globalCompositeOperation = 'lighter';
   for (const item of items) {
-    ctx.globalAlpha = mode === 'simplificationPreview' ? item.alpha * (1 - item.fade * 0.92) : item.alpha;
+    const alpha = mode === 'simplificationPreview'
+      ? item.alpha * (1 - item.fade * 0.92)
+      : mode !== 'normal' && item.fade <= 0
+        ? item.alpha * 0.34
+        : item.alpha;
+    ctx.globalAlpha = alpha;
     const gradient = ctx.createRadialGradient(item.x, item.y, 0, item.x, item.y, item.r);
     gradient.addColorStop(0, item.color);
     gradient.addColorStop(1, 'rgba(0,0,0,0)');
@@ -91,19 +96,40 @@ function metricFor(scene: SplatScene, i: number, mode: ViewMode, thresholds: Dia
 }
 
 function simplificationScore(scene: SplatScene, i: number, thresholds: DiagnosticThresholds): number {
-  const opacityRisk = thresholds.opacityFloor <= 0
-    ? 0
-    : clamp01((thresholds.opacityFloor - scene.opacities[i]) / Math.max(thresholds.opacityFloor, 0.001));
-  const rawOutlierRisk = clamp01((scene.metrics.outlierScore[i] - thresholds.outlierPercentile) / Math.max(1 - thresholds.outlierPercentile, 0.001));
-  const outlierRisk = scene.metrics.outlierScore[i] > thresholds.outlierPercentile
-    ? clamp01(0.18 + rawOutlierRisk * 0.82)
-    : 0;
-  return clamp01(Math.max(opacityRisk, scene.metrics.deadScore[i] * 0.72, outlierRisk));
+  return clamp01(Math.max(
+    thresholdSignal(scene, i, 'opacity', thresholds),
+    thresholdSignal(scene, i, 'density', thresholds),
+    thresholdSignal(scene, i, 'overdraw', thresholds),
+    thresholdSignal(scene, i, 'projectedSize', thresholds),
+    thresholdSignal(scene, i, 'outliers', thresholds),
+    thresholdSignal(scene, i, 'dead', thresholds),
+    thresholdSignal(scene, i, 'blurRisk', thresholds),
+  ));
 }
 
-function simplificationFade(scene: SplatScene, i: number, thresholds: DiagnosticThresholds): number {
-  const risk = simplificationScore(scene, i, thresholds);
-  return risk <= 0 ? 0 : clamp01(0.22 + risk * 0.68);
+function thresholdSignal(scene: SplatScene, i: number, mode: ViewMode, thresholds: DiagnosticThresholds): number {
+  if (mode === 'simplificationPreview') {
+    const risk = simplificationScore(scene, i, thresholds);
+    return risk <= 0 ? 0 : clamp01(0.22 + risk * 0.68);
+  }
+  const metric = metricFor(scene, i, mode, thresholds);
+  if (mode === 'opacity') {
+    if (thresholds.opacityFloor <= 0 || metric >= thresholds.opacityFloor) return 0;
+    return clamp01(0.25 + ((thresholds.opacityFloor - metric) / Math.max(thresholds.opacityFloor, 0.001)) * 0.75);
+  }
+  const cutoff = cutoffForMode(mode, thresholds);
+  if (cutoff === undefined || metric <= cutoff) return 0;
+  return clamp01(0.25 + ((metric - cutoff) / Math.max(1 - cutoff, 0.001)) * 0.75);
+}
+
+function cutoffForMode(mode: ViewMode, thresholds: DiagnosticThresholds): number | undefined {
+  if (mode === 'density') return thresholds.densityCutoff;
+  if (mode === 'overdraw') return thresholds.overdrawCutoff;
+  if (mode === 'projectedSize') return thresholds.projectedSizeCutoff;
+  if (mode === 'outliers') return thresholds.outlierPercentile;
+  if (mode === 'dead') return thresholds.deadCutoff;
+  if (mode === 'blurRisk') return thresholds.blurRiskCutoff;
+  return undefined;
 }
 
 function rgb(r: number, g: number, b: number): string {

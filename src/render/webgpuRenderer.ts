@@ -57,7 +57,12 @@ export class WebGpuSplatRenderer {
   setThresholds(thresholds: DiagnosticThresholds): void {
     if (
       this.thresholds.opacityFloor === thresholds.opacityFloor
+      && this.thresholds.densityCutoff === thresholds.densityCutoff
+      && this.thresholds.overdrawCutoff === thresholds.overdrawCutoff
+      && this.thresholds.projectedSizeCutoff === thresholds.projectedSizeCutoff
       && this.thresholds.outlierPercentile === thresholds.outlierPercentile
+      && this.thresholds.deadCutoff === thresholds.deadCutoff
+      && this.thresholds.blurRiskCutoff === thresholds.blurRiskCutoff
     ) {
       return;
     }
@@ -148,7 +153,7 @@ export class WebGpuSplatRenderer {
 
   private uploadScene(camera: CameraState): void {
     if (!this.device || !this.pipeline || !this.uniformBuffer || !this.scene) return;
-    const sortKey = `${this.scene.name}:${this.scene.count}:${this.viewMode}:${this.thresholds.opacityFloor}:${this.thresholds.outlierPercentile}`;
+    const sortKey = `${this.scene.name}:${this.scene.count}:${this.viewMode}:${Object.values(this.thresholds).join(':')}`;
     if (this.sortedData && sortKey === this.lastSortKey) return;
     const data = this.buildDisplayData();
     this.splatBuffer?.destroy();
@@ -187,7 +192,7 @@ export class WebGpuSplatRenderer {
       data[base + 8] = metric;
       data[base + 9] = 0;
       data[base + 10] = scene.sourceIndices[i];
-      data[base + 11] = simplificationFade(scene, i, this.thresholds);
+      data[base + 11] = thresholdSignal(scene, i, this.viewMode, this.thresholds);
     }
     return data;
   }
@@ -211,19 +216,40 @@ function metricForMode(scene: SplatScene, i: number, mode: ViewMode, thresholds:
 }
 
 function simplificationScore(scene: SplatScene, i: number, thresholds: DiagnosticThresholds): number {
-  const opacityRisk = thresholds.opacityFloor <= 0
-    ? 0
-    : clamp01((thresholds.opacityFloor - scene.opacities[i]) / Math.max(thresholds.opacityFloor, 0.001));
-  const rawOutlierRisk = clamp01((scene.metrics.outlierScore[i] - thresholds.outlierPercentile) / Math.max(1 - thresholds.outlierPercentile, 0.001));
-  const outlierRisk = scene.metrics.outlierScore[i] > thresholds.outlierPercentile
-    ? clamp01(0.18 + rawOutlierRisk * 0.82)
-    : 0;
-  return clamp01(Math.max(opacityRisk, scene.metrics.deadScore[i] * 0.72, outlierRisk));
+  return clamp01(Math.max(
+    thresholdSignal(scene, i, 'opacity', thresholds),
+    thresholdSignal(scene, i, 'density', thresholds),
+    thresholdSignal(scene, i, 'overdraw', thresholds),
+    thresholdSignal(scene, i, 'projectedSize', thresholds),
+    thresholdSignal(scene, i, 'outliers', thresholds),
+    thresholdSignal(scene, i, 'dead', thresholds),
+    thresholdSignal(scene, i, 'blurRisk', thresholds),
+  ));
 }
 
-function simplificationFade(scene: SplatScene, i: number, thresholds: DiagnosticThresholds): number {
-  const risk = simplificationScore(scene, i, thresholds);
-  return risk <= 0 ? 0 : clamp01(0.22 + risk * 0.68);
+function thresholdSignal(scene: SplatScene, i: number, mode: ViewMode, thresholds: DiagnosticThresholds): number {
+  if (mode === 'simplificationPreview') {
+    const risk = simplificationScore(scene, i, thresholds);
+    return risk <= 0 ? 0 : clamp01(0.22 + risk * 0.68);
+  }
+  const metric = metricForMode(scene, i, mode, thresholds);
+  if (mode === 'opacity') {
+    if (thresholds.opacityFloor <= 0 || metric >= thresholds.opacityFloor) return 0;
+    return clamp01(0.25 + ((thresholds.opacityFloor - metric) / Math.max(thresholds.opacityFloor, 0.001)) * 0.75);
+  }
+  const cutoff = cutoffForMode(mode, thresholds);
+  if (cutoff === undefined || metric <= cutoff) return 0;
+  return clamp01(0.25 + ((metric - cutoff) / Math.max(1 - cutoff, 0.001)) * 0.75);
+}
+
+function cutoffForMode(mode: ViewMode, thresholds: DiagnosticThresholds): number | undefined {
+  if (mode === 'density') return thresholds.densityCutoff;
+  if (mode === 'overdraw') return thresholds.overdrawCutoff;
+  if (mode === 'projectedSize') return thresholds.projectedSizeCutoff;
+  if (mode === 'outliers') return thresholds.outlierPercentile;
+  if (mode === 'dead') return thresholds.deadCutoff;
+  if (mode === 'blurRisk') return thresholds.blurRiskCutoff;
+  return undefined;
 }
 
 const shader = /* wgsl */ `
@@ -308,7 +334,6 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
   if (gaussian < 0.025) {
     discard;
   }
-  let mode = i32(input.hidden + uniforms.viewMode * 0.0);
   var color = input.color.rgb;
   var alpha = input.color.a * gaussian;
   if (uniforms.viewMode > 0.5) {
@@ -318,6 +343,9 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
   if (uniforms.viewMode > 7.5 && input.hidden > 0.0) {
     color = vec3<f32>(0.07, 0.08, 0.09);
     alpha = mix(alpha, 0.055 * gaussian, clamp(input.hidden, 0.0, 1.0));
+  } else if (uniforms.viewMode > 0.5 && input.hidden <= 0.0) {
+    color = mix(color, vec3<f32>(0.1, 0.12, 0.14), 0.72);
+    alpha = alpha * 0.34;
   }
   return vec4<f32>(color * alpha, alpha);
 }
