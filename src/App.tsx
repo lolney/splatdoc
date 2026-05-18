@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { type CSSProperties, type HTMLAttributes, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { makeDemoScene } from './domain/demoScene';
+import { percentile } from './domain/math';
 import { estimateView, runStressTest } from './domain/metrics';
 import { DEFAULT_THRESHOLDS, VIEW_LABELS, type CameraState, type DiagnosticThresholds, type SplatScene, type ViewMode } from './domain/types';
 import { useLocalStorageState } from './hooks/useLocalStorage';
@@ -104,6 +105,27 @@ interface TooltipState {
   x: number;
   y: number;
   side: 'top' | 'bottom';
+}
+
+interface PerfMeasureRequest {
+  viewMode?: ViewMode;
+  thresholds?: Partial<DiagnosticThresholds>;
+  camera?: Partial<CameraState>;
+  samples?: number;
+}
+
+declare global {
+  interface Window {
+    __splatdocPerf?: {
+      measure: (request?: PerfMeasureRequest) => Promise<{
+        estimateMs: number;
+        samples: number[];
+        medianMs: number;
+        meanMs: number;
+        p95Ms: number;
+      }>;
+    };
+  }
 }
 
 export default function App() {
@@ -217,6 +239,46 @@ export default function App() {
       if (frame !== null) window.cancelAnimationFrame(frame);
     };
   }, [scene, thresholds, ui.viewMode]);
+
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has('perf')) {
+      delete window.__splatdocPerf;
+      return;
+    }
+    window.__splatdocPerf = {
+      measure: async (request: PerfMeasureRequest = {}) => {
+        const renderer = rendererRef.current;
+        if (!renderer) throw new Error('WebGPU renderer is not active.');
+        const measuredThresholds = normalizeThresholds({ ...thresholds, ...request.thresholds });
+        const measuredCamera = { ...ui.camera, ...request.camera };
+        const measuredMode = request.viewMode ?? ui.viewMode;
+        const sampleCount = Math.max(1, Math.min(120, Math.floor(request.samples ?? 30)));
+
+        renderer.setViewMode(measuredMode);
+        renderer.setThresholds(measuredThresholds);
+        renderer.render(measuredCamera);
+        const samples: number[] = [];
+        for (let i = 0; i < sampleCount; i++) {
+          samples.push(await renderer.measureFrame(measuredCamera));
+        }
+
+        renderer.setViewMode(ui.viewMode);
+        renderer.setThresholds(thresholds);
+        renderer.render(ui.camera);
+
+        return {
+          estimateMs: estimateView(scene, measuredCamera, measuredThresholds).estimatedMs,
+          samples,
+          medianMs: percentile(samples, 0.5),
+          meanMs: samples.reduce((total, sample) => total + sample, 0) / samples.length,
+          p95Ms: percentile(samples, 0.95),
+        };
+      },
+    };
+    return () => {
+      delete window.__splatdocPerf;
+    };
+  }, [scene, thresholds, ui.camera, ui.viewMode]);
 
   const updateUi = useCallback((patch: Partial<PersistedUi>) => {
     setUi({ ...ui, ...patch });

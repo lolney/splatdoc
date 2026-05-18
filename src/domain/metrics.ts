@@ -132,12 +132,13 @@ export function estimateView(scene: SplatScene, camera: CameraState, thresholds:
   const projectedSizeP95 = percentile(projected, 0.95);
   const overdrawScore = clamp01(overdraw / sampleCount);
   const soupRisk = clamp01(soup / sampleCount);
+  const effectiveProjectedP95 = Math.min(projectedSizeP95, 140);
   return {
     projectedSizeP50: percentile(projected, 0.5),
     projectedSizeP95,
     overdrawScore,
     soupRisk,
-    estimatedMs: 1.4 + scene.count / 180000 + overdrawScore * 8 + projectedSizeP95 / 38,
+    estimatedMs: 0.25 + scene.count / 12000 + overdrawScore * 1.4 + Math.log2(1 + effectiveProjectedP95 / 32) * 0.35,
     flaggedSplats: Math.round((flagged / sampleCount) * scene.count),
   };
 }

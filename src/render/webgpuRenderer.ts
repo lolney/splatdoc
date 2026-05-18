@@ -94,6 +94,14 @@ export class WebGpuSplatRenderer {
     this.device.queue.submit([encoder.finish()]);
   }
 
+  async measureFrame(camera: CameraState): Promise<number> {
+    if (!this.device) return 0;
+    const start = performance.now();
+    this.render(camera);
+    await this.device.queue.onSubmittedWorkDone();
+    return performance.now() - start;
+  }
+
   dispose(): void {
     this.splatBuffer?.destroy();
     this.uniformBuffer?.destroy();
